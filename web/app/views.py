@@ -40,9 +40,6 @@ def lab04_bootstrap():
 def crash():
     return 1/0
 
-# @app.route('/lab10')
-# def lab10_phonebook():
-#     return app.send_static_file('lab10_phonebook.html')
 
 @app.route('/lab10', methods=('GET', 'POST'))
 def lab10_phonebook():
@@ -114,10 +111,6 @@ def lab10_remove_contacts():
     return lab10_db_contacts()
 
 #-----------------------------------------------------------------------------------------------------------------
-
-# @app.route('/lab11')
-# def lab11_microblog():
-#     return app.send_static_file('lab11_microblog.html')
 
 @app.route('/lab11', methods=('GET', 'POST'))
 @login_required
@@ -222,11 +215,14 @@ def lab13_edit():
         new_name = request.form['name']
         new_email = request.form['email']
         user = AuthUser.query.filter_by(email=new_email).first()
+        username = AuthUser.query.filter_by(name=new_name).first()
 
         if not check_password_hash(current_user.password, current_password):
             flash('Incorrect password.')
         elif user and current_user.email != request.form['email']:
             flash('Email is already taken.')
+        elif username and current_user.name != request.form['name']:
+            flash('Username is already taken.')
         else:
             old_name = current_user.name
             old_email = current_user.email
