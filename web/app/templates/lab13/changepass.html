@@ -1,0 +1,28 @@
+{% extends "lab13/base.html" %}
+{% block content %}
+<div class="column is-4 is-offset-4">
+ <h3 class="title">Edit your account</h3>
+ <div class="box">
+   {% with messages = get_flashed_messages() %}
+   {% if messages %}
+   <div class="notification is-danger">
+     {{ messages[0] }}
+   </div> Change your password
+   {% endif %}
+   {% endwith %}
+   <form method="POST">
+     <div class="field">
+       <div class="control"> Enter your new password
+         <input class="input is-large" type="password" name="password1" placeholder="New Password">
+       </div>
+     </div>
+     <div class="field">
+       <div class="control"> Confirm your password
+         <input class="input is-large" type="password" name="password2" placeholder="Confirm Password">
+       </div>
+     </div>
+     <button class="button is-block is-info is-large is-fullwidth">Apply</button>
+   </form>
+ </div>
+</div>
+{% endblock %}

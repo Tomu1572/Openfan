@@ -1,0 +1,99 @@
+<!doctype html>
+<!-- 
+Suphakit Ng (Tomu)
+640510682
+lab02 204212 sec002 -->
+<html lang="en">
+<head>
+  <link rel="stylesheet" href="static/css/home.css">
+  <title>Eden's site</title>
+</head>
+<body>
+<header>
+  <img src="static/img/cmu-logo.png" class="logo">
+  <nav class="navbar">
+    <ul class="navigation">
+      <li><a href="#" class="active">Home</a></li>
+      <li><a href="static/about.html">About Me</a></li>
+      <li><a href="#">Work</a></li>
+      <li><a href="#">Contact</a></li>
+    </ul>
+    <div class="search">
+      <span class="icon">
+        <ion-icon name="search-outline" class="searchBtn"></ion-icon>
+        <ion-icon name="close-outline" class="closeBtn"></ion-icon>
+      </span>
+    </div>
+    <ion-icon name="menu-outline" class="menuToggle"></ion-icon>
+  </nav>
+  <div class="searchBox">
+    <input type="text" placeholder="Search here . . .">
+  </div>
+</header>
+<script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
+<script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
+  <section>
+    <img src="static/img/stars.png" id="stars">
+    <img src="static/img/moon.png" id="moon">
+    <h2 id="text">Lion Ng</h2>
+    <a href="#" id="btn">Explore</a>
+    <img src="static/img/landscape.png" id="landscape">
+  </section>
+  <div class="sec" id="sec">
+    <h2>Short Story</h2>
+    <p>Some time ago, a man punished his 3-year-old daughter for wasting a roll of gold wrapping paper. Money was tight and he became infuriated when the child tried to decorate a box to put under the Christmas tree.
+    Nevertheless, the little girl brought the gift to her father the next morning and said, “This is for you, Daddy.”
+    The man became embarrassed by his overreaction earlier, but his rage continue when he saw that the box was empty. He yelled at her; “Don’t you know, when you give someone a present, there is supposed to be something inside?”
+    The little girl looked up at him with tears in her eyes and cried.<br><br>“Oh.. Daddy, it’s not empty at all. I blew kisses into the box.... They’re all for you, Daddy....”<br><br>
+    The father was crushed. He put his arms around his little girl, and he begged for her forgiveness.<br><br>Only a short time later, an accident took the life of the child.
+    Her father kept the gold box by his bed for many years and, whenever he was discouraged, he would take out an imaginary kiss and remember the love of the child who had put it there.</p>
+  </div>
+
+  <script>
+    let stars = document.getElementById('stars');
+    let moon = document.getElementById('moon');
+    let landscape = document.getElementById('landscape');
+    let text = document.getElementById('text');
+    let btn = document.getElementById('btn');
+    let header = document.querySelector('header');
+
+    window.addEventListener('scroll', function(){
+      let value = window.scrollY;
+      stars.style.left = value * 0.2 + 'px';
+      moon.style.top = value * 0.85 + 'px';
+      landscape.style.top = value * 0 + 'px';
+      text.style.marginBottom = value * 1.5 + 'px';
+      btn.style.marginBottom = value * 1.5 + 'px';
+      header.style.top = value * 0.5 + 'px';
+    })
+  </script>
+  <script>
+    let navigation = document.querySelector('.navigation');
+    let menuToggle = document.querySelector('.menuToggle');
+    let search = document.querySelector('.search');
+    let searchBox = document.querySelector('.searchBox');
+    let searchBtn = document.querySelector('.searchBtn');
+    let closeBtn = document.querySelector('.closeBtn');
+    
+    searchBtn.onclick = function(){
+      searchBox.classList.add('active');
+      closeBtn.classList.add('active');
+      searchBtn.classList.add('active');
+      menuToggle.classList.add('hide');
+      header.classList.remove('open');
+    }
+    closeBtn.onclick = function(){
+      searchBtn.classList.remove('active');
+      closeBtn.classList.remove('active');
+      searchBox.classList.remove('active');
+      menuToggle.classList.remove('hide');
+    }
+    menuToggle.onclick = function(){
+      header.classList.toggle('open');
+      searchBtn.classList.remove('active');
+      closeBtn.classList.remove('active');
+      searchBox.classList.remove('active');
+    }
+  </script>
+</body>
+</html>
