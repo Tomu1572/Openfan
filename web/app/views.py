@@ -4,7 +4,6 @@ import os
 from flask import (jsonify, render_template,
                    request, url_for, flash, redirect)
 import json
-from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.urls import url_parse
 from sqlalchemy.sql import text
@@ -129,14 +128,8 @@ def db_blogentry():
     blogentry = []
     db_blogentry = Privateblog.query.all()
 
-    for i in db_blogentry:
-        app.logger.debug(i.to_dict())
-        owner_id = i.to_dict()["owner_id"]
-        app.logger.debug(owner_id)
-        user_data = AuthUser.query.get(owner_id)
-        user_dict = {attr: getattr(user_data, attr) for attr in ['id', 'email', 'name', 'avatar_url']}
-        blogentry.append({**user_dict, **i.to_dict()})
-
+    blogentry = list(map(lambda x: x.to_dict(), db_blogentry))
+    blogentry.sort(key=lambda x: x['id'])
     app.logger.debug("DB BlogEntry: " + str(blogentry))
 
     return jsonify(blogentry)
@@ -155,16 +148,11 @@ def db_user_blogentry():
 @app.route("/select_blogentry/<string:username>")
 def db_select_blogentry(username):
     blogentry = []
-    user = AuthUser.query.filter_by(name=username).first_or_404()
-    db_select_blogentry = Privateblog.query.filter_by(owner_id=user.id).all()
+    user = BlogEntry.query.filter_by(name=username).first_or_404()
+    db_select_blogentry = Privateblog.query.filter_by(name=user.name).all()
 
-    for i in db_select_blogentry:
-        app.logger.debug(i.to_dict())
-        owner_id = i.to_dict()["owner_id"]
-        app.logger.debug(owner_id)
-        user_data = AuthUser.query.get(owner_id)
-        user_dict = {attr: getattr(user_data, attr) for attr in ['id', 'email', 'name', 'avatar_url']}
-        blogentry.append({**user_dict, **i.to_dict(), 'username': user.name})
+    blogentry = list(map(lambda x: x.to_dict(), db_select_blogentry))
+    blogentry.sort(key=lambda x: x['id'])
     app.logger.debug("DB BlogEntry: " + str(blogentry))
 
     return jsonify(blogentry)
@@ -178,7 +166,7 @@ def freeFan():
         id_ = result.get('id', '')
         validated = True
         validated_dict = dict()
-        valid_keys = ['message', 'avatar_url']
+        valid_keys = ['name', 'message', 'email', 'avatar_url']
 
         # validate the input
         for key in result:
@@ -256,7 +244,6 @@ def userfreeFan():
 @app.route("/user_posts/<string:username>")
 @login_required
 def user_posts(username):
-    # Check if name in Authuser.
     user = BlogEntry.query.filter_by(name=username).first_or_404()
 
     user_posts = Privateblog.query.filter_by(owner_id=user.id).all()
@@ -278,22 +265,6 @@ def remove_blog():
             app.logger.debug(ex)
             raise
     return db_blogentry()
-
-@app.route('/lab11/upload')
-@login_required
-def lab11_upload():
-    pic = request.files['pic']
-
-    if not pic:
-        return "No pic uploaded", 400
-    
-    filename =  secure_filename(pic.filename)
-    mimetype = pic.mimetype
-    img = Privateblog(img=pic.read(), mimetype=mimetype, name=filename)
-    db.session.add(img)
-    db.session.commit()
-
-    return "Image has been uploaded!", 200
 
 
 @app.route('/remove_blog_profile', methods=('GET', 'POST'))
