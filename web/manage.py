@@ -5,12 +5,11 @@ from app.models.authuser import AuthUser,Privateblog
 
 cli = FlaskGroup(app)
 
-@cli.command("create_db")
+@cli.command("create_db")   
 def create_db():
     db.drop_all()
     db.create_all()
     db.session.commit()
-
 
 @cli.command("seed_db")
 def seed_db():
@@ -19,7 +18,7 @@ def seed_db():
                             password=generate_password_hash('0000', method='sha256'),
                             avatar_url='https://ui-avatars.com/api/?name=Test+0&background=83ee03&color=fff'))
     
-    db.session.add(Privateblog(name='Test 0', email="test0@opf.com", message="test 0 - 1",
+    db.session.add(Privateblog(message="test 0 - 1",
                                avatar_url='https://ui-avatars.com/api/?name=Test+0&background=83ee03&color=fff',
                                owner_id=1))
 
@@ -27,7 +26,7 @@ def seed_db():
                             password=generate_password_hash('1111', method='sha256'),
                             avatar_url='https://ui-avatars.com/api/?name=Test+1&background=83ee03&color=fff'))
     
-    db.session.add(Privateblog(name='Test 1', email="test1@opf.com", message="test 1 - 1",
+    db.session.add(Privateblog(message="test 1 - 1",
                                avatar_url='https://ui-avatars.com/api/?name=Test+1&background=83ee03&color=fff',
                                owner_id=2))
     
@@ -36,10 +35,9 @@ def seed_db():
                             password=generate_password_hash('2222', method='sha256'),
                             avatar_url='https://ui-avatars.com/api/?name=Test+2&background=83ee03&color=fff'))
     
-    db.session.add(Privateblog(name='Test 2', email="test2@opf.com", message="test 2 - 1",
+    db.session.add(Privateblog(message="test 2 - 1",
                                avatar_url='https://ui-avatars.com/api/?name=Test+2&background=83ee03&color=fff',
                                owner_id=3))
-    
     
     db.session.commit()
 
