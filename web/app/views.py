@@ -128,9 +128,13 @@ def db_blogentry():
     blogentry = []
     db_blogentry = Privateblog.query.all()
 
-    blogentry = list(map(lambda x: x.to_dict(), db_blogentry))
-    blogentry.sort(key=lambda x: x['id'])
-    app.logger.debug("DB BlogEntry: " + str(blogentry))
+    for i in db_blogentry:
+        app.logger.debug(i.to_dict())
+        owner_id = i.to_dict()["owner_id"]
+        app.logger.debug(owner_id)
+        user_data = AuthUser.query.get(owner_id)
+        user_dict = {attr: getattr(user_data, attr) for attr in ['id', 'email', 'name', 'avatar_url']}
+        blogentry.append({**user_dict, **i.to_dict()})
 
     return jsonify(blogentry)
 
@@ -148,11 +152,16 @@ def db_user_blogentry():
 @app.route("/select_blogentry/<string:username>")
 def db_select_blogentry(username):
     blogentry = []
-    user = BlogEntry.query.filter_by(name=username).first_or_404()
-    db_select_blogentry = Privateblog.query.filter_by(name=user.name).all()
+    user = AuthUser.query.filter_by(name=username).first_or_404()
+    db_select_blogentry = Privateblog.query.filter_by(owner_id=user.id).all()
 
-    blogentry = list(map(lambda x: x.to_dict(), db_select_blogentry))
-    blogentry.sort(key=lambda x: x['id'])
+    for i in db_select_blogentry:
+        app.logger.debug(i.to_dict())
+        owner_id = i.to_dict()["owner_id"]
+        app.logger.debug(owner_id)
+        user_data = AuthUser.query.get(owner_id)
+        user_dict = {attr: getattr(user_data, attr) for attr in ['id', 'email', 'name', 'avatar_url']}
+        blogentry.append({**user_dict, **i.to_dict(), 'username': user.name})
     app.logger.debug("DB BlogEntry: " + str(blogentry))
 
     return jsonify(blogentry)
@@ -166,7 +175,7 @@ def freeFan():
         id_ = result.get('id', '')
         validated = True
         validated_dict = dict()
-        valid_keys = ['name', 'message', 'email', 'avatar_url']
+        valid_keys = ['message', 'avatar_url']
 
         # validate the input
         for key in result:
@@ -244,7 +253,7 @@ def userfreeFan():
 @app.route("/user_posts/<string:username>")
 @login_required
 def user_posts(username):
-    user = BlogEntry.query.filter_by(name=username).first_or_404()
+    user = AuthUser.query.filter_by(name=username).first_or_404()
 
     user_posts = Privateblog.query.filter_by(owner_id=user.id).all()
 
