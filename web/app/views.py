@@ -1,27 +1,24 @@
+import secrets
+import string
+import os
 from flask import (jsonify, render_template,
                    request, url_for, flash, redirect)
-
+import json
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.urls import url_parse
-import json
 from sqlalchemy.sql import text
 from flask_login import login_user, login_required, logout_user, current_user
 from app import app
 from app import db
 from app import login_manager
-from app.models.contact import Contact
-from app.models.info import BlogEntry
-from app.models.authuser import AuthUser, PrivateContact, PrivateBlogEntry
+from app import oauth
+from app.models.blogEntry import BlogEntry
+from app.models.authuser import AuthUser, Privateblog
 
-@login_manager.user_loader
-def load_user(user_id):
-    # since the user_id is just the primary key of our
-    # user table, use it in the query for the user
-    return AuthUser.query.get(int(user_id))
+@app.route('/crash')
+def crash():
+    return 1/0
 
-@app.route('/')
-def home():
-    return "Flask says 'Hello world!'"
 
 @app.route('/db')
 def db_connection():
@@ -32,159 +29,445 @@ def db_connection():
     except Exception as e:
         return '<h1>db is broken.</h1>' + str(e)
 
-@app.route('/lab04')
-def lab04_bootstrap():
-    return app.send_static_file('lab04_bootstrap.html')
-
-@app.route('/crash')
-def crash():
-    return 1/0
+@app.route('/google/')
+def google():
 
 
-@app.route('/lab10', methods=('GET', 'POST'))
-def lab10_phonebook():
-    if request.method == 'POST':
-        result = request.form.to_dict()
-        app.logger.debug(str(result))
-        id_ = result.get('id', '')
-        validated = True
-        validated_dict = dict()
-        valid_keys = ['firstname', 'lastname', 'phone']
-        # validate the input
-        for key in result:
-            app.logger.debug(key, result[key])
-            # screen of unrelated inputs
-            if key not in valid_keys:
-                continue
+    oauth.register(
+        name='google',
+        client_id=app.config['GOOGLE_CLIENT_ID'],
+        client_secret=app.config['GOOGLE_CLIENT_SECRET'],
+        server_metadata_url=app.config['GOOGLE_DISCOVERY_URL'],
+        client_kwargs={
+            'scope': 'openid email profile'
+        }
+    )
 
-            value = result[key].strip()
-            if not value or value == 'undefined':
-                validated = False
-                break
-            validated_dict[key] = value
 
-        if validated:
-            app.logger.debug('validated dict: ' + str(validated_dict))
-            # if there is no id: create a new contact entry
-            if not id_:
-                validated_dict['owner_id'] = current_user.id
-                # entry = Contact(**validated_dict)
-                entry = PrivateContact(**validated_dict)
-                app.logger.debug(str(entry))
-                db.session.add(entry)
-            # if there is an id already: update the contact entry
-            else:
-                # contact = Contact.query.get(id_)
-                contact = PrivateContact.query.get(id_)
-                if contact.owner_id == current_user.id:
-                    contact.update(**validated_dict)
+   # Redirect to google_auth function
+    redirect_uri = url_for('google_auth', _external=True)
+    return oauth.google.authorize_redirect(redirect_uri)
 
-            db.session.commit()
+@app.route('/google/auth/')
+def google_auth():
+    token = oauth.google.authorize_access_token()
+    app.logger.debug(str(token))
 
-        return lab10_db_contacts()
-    return render_template('lab10_phonebook.html')
 
-@app.route("/lab10/contacts")
-@login_required
-def lab10_db_contacts():
-    # db_contacts = Contact.query.all()
-    db_contacts = PrivateContact.query.filter(
-        PrivateContact.owner_id == current_user.id)
-    contacts = list(map(lambda x: x.to_dict(), db_contacts))
-    app.logger.debug("DB Contacts: " + str(contacts))
+    userinfo = token['userinfo']
+    app.logger.debug(" Google User " + str(userinfo))
+    email = userinfo['email']
+    user = AuthUser.query.filter_by(email=email).first()
 
-    return jsonify(contacts)
 
-@app.route('/lab10/remove_contact', methods=('GET', 'POST'))
-def lab10_remove_contacts():
-    app.logger.debug("LAB10 - REMOVE")
-    if request.method == 'POST':
-        result = request.form.to_dict()
-        id_ = result.get('id', '')
-        try:
-            contact = Contact.query.get(id_)
-            db.session.delete(contact)
-            db.session.commit()
-        except Exception as ex:
-            app.logger.debug(ex)
-            raise
-    return lab10_db_contacts()
+    if not user:
+        name = userinfo['given_name'] + " " + userinfo['family_name']
+        random_pass_len = 8
+        password = ''.join(secrets.choice(string.ascii_uppercase + string.digits)
+                          for i in range(random_pass_len))
+        picture = userinfo['picture']
+        new_user = AuthUser(email=email, name=name,
+                           password=generate_password_hash(
+                               password, method='sha256'),
+                           avatar_url=picture)
+        db.session.add(new_user)
+        db.session.commit()
+        user = AuthUser.query.filter_by(email=email).first()
+    login_user(user)
+    return redirect('/')
 
-#-----------------------------------------------------------------------------------------------------------------
+@app.route('/facebook/')
+def facebook():
+    # Facebook Oauth Config
+    FACEBOOK_CLIENT_ID = os.environ.get('FACEBOOK_CLIENT_ID')
+    FACEBOOK_CLIENT_SECRET = os.environ.get('FACEBOOK_CLIENT_SECRET')
+    oauth.register(
+        name='facebook',
+        client_id=FACEBOOK_CLIENT_ID,
+        client_secret=FACEBOOK_CLIENT_SECRET,
+        access_token_url='https://graph.facebook.com/oauth/access_token',
+        access_token_params=None,
+        authorize_url='https://www.facebook.com/dialog/oauth',
+        authorize_params=None,
+        api_base_url='https://graph.facebook.com/',
+        client_kwargs={'scope': 'email'},
+    )
+    redirect_uri = url_for('facebook_auth', _external=True)
+    return oauth.facebook.authorize_redirect(redirect_uri)
+ 
+@app.route('/facebook/auth/')
+def facebook_auth():
+    token = oauth.facebook.authorize_access_token()
+    resp = oauth.facebook.get(
+        'https://graph.facebook.com/me?fields=id,name,email,picture{url}')
+    profile = resp.json()
+    print("Facebook User ", profile)
 
-@app.route('/lab11', methods=('GET', 'POST'))
-@login_required
-def lab11_microblog():
-    if request.method == 'POST':
-        result = request.form.to_dict()
-        app.logger.debug(str(result))
-        id_ = result.get('id', '')
-        validated = True
-        validated_dict = dict()
-        valid_keys = ['message']
+    email = profile['email']
+    user = AuthUser.query.filter_by(email=email).first()
 
-        # validate the input
-        for key in result:
-            app.logger.debug(key, result[key])
-            # screen of unrelated inputs
-            if key not in valid_keys:
-                continue
+    if not user:
+        name = profile['name']
+        random_pass_len = 8
+        password = ''.join(secrets.choice(string.ascii_uppercase + string.digits)
+                          for i in range(random_pass_len))
+        picture = profile['picture']['data']['url']
+        new_user = AuthUser(email=email, name=name,
+                           password=generate_password_hash(
+                               password, method='sha256'),
+                           avatar_url=picture)
+        db.session.add(new_user)
+        db.session.commit()
+        user = AuthUser.query.filter_by(email=email).first()
+    login_user(user)
+    return redirect('/')
 
-            value = result[key].strip()
-            if not value or value == 'undefined':
-                validated = False
-                break
-            validated_dict[key] = value
 
-        if validated:
-            app.logger.debug('validated dict: ' + str(validated_dict))
-            # if there is no id: create a new contact entry
-            if not id_:
-                validated_dict['owner_id'] = current_user.id
-                entry = PrivateBlogEntry(**validated_dict)
-                app.logger.debug(str(entry))
-                db.session.add(entry)
-            # if there is an id already: update the contact entry
-            else:
-                blogpost = PrivateBlogEntry.query.get(id_)
-                if blogpost.owner_id == current_user.id:
-                    blogpost.update(**validated_dict)
+@app.route("/blogentry")
+def db_blogentry():
+    blogentry = []
+    db_blogentry = Privateblog.query.all()
 
-            db.session.commit()
-
-        return lab11_db_blog()
-    
-    return render_template('lab11_microblog.html')
-
-@app.route("/lab11/BlogEntry")
-def lab11_db_blog():
-    blog = []
-    db_blog_entries = PrivateBlogEntry.query.order_by(PrivateBlogEntry.date_created.desc()).all()
-
-    for i in db_blog_entries:
+    for i in db_blogentry:
         app.logger.debug(i.to_dict())
         owner_id = i.to_dict()["owner_id"]
         app.logger.debug(owner_id)
         user_data = AuthUser.query.get(owner_id)
-        blog.append([user_data.to_dict(), i.to_dict()])
-    # blog = list(map(lambda x: x.to_dict(), db_blog_entries))
-    # app.logger.debug("DB blog entries: " + str(blog))
-    return jsonify(blog)
+        user_dict = {attr: getattr(user_data, attr) for attr in ['id', 'email', 'name', 'avatar_url']}
+        blogentry.append({**user_dict, **i.to_dict()})
 
-@app.route('/lab11/remove_contact', methods=('GET', 'POST'))
-def lab11_remove_contacts():
-    app.logger.debug("LAB11 - REMOVE")
+    return jsonify(blogentry)
+
+@app.route("/user_blogentry")
+def db_user_blogentry():
+    blogentry = []
+    db_user_blogentry = Privateblog.query.filter(Privateblog.owner_id == current_user.id)
+
+    blogentry = list(map(lambda x: x.to_dict(), db_user_blogentry))
+    blogentry.sort(key=lambda x: x['id'])
+    app.logger.debug("DB BlogEntry: " + str(blogentry))
+
+    return jsonify(blogentry)
+
+@app.route("/select_blogentry/<string:username>")
+def db_select_blogentry(username):
+    blogentry = []
+    user = AuthUser.query.filter_by(name=username).first_or_404()
+    db_select_blogentry = Privateblog.query.filter_by(owner_id=user.id).all()
+
+    for i in db_select_blogentry:
+        app.logger.debug(i.to_dict())
+        owner_id = i.to_dict()["owner_id"]
+        app.logger.debug(owner_id)
+        user_data = AuthUser.query.get(owner_id)
+        user_dict = {attr: getattr(user_data, attr) for attr in ['id', 'email', 'name', 'avatar_url']}
+        blogentry.append({**user_dict, **i.to_dict(), 'username': user.name})
+    app.logger.debug("DB BlogEntry: " + str(blogentry))
+
+    return jsonify(blogentry)
+
+@app.route('/', methods=('GET', 'POST'))
+
+def freeFan():
+    if request.method == 'POST':
+        result = request.form.to_dict()
+        app.logger.debug(str(result))
+        id_ = result.get('id', '')
+        validated = True
+        validated_dict = dict()
+        valid_keys = ['message', 'avatar_url']
+
+        # validate the input
+        for key in result:
+            app.logger.debug(key, result[key])
+            # screen of unrelated inputs
+            if key not in valid_keys:
+                continue
+
+            value = result[key].strip()
+            if not value or value == 'undefined':
+                validated = False
+                break
+            validated_dict[key] = value
+
+        if validated:
+            app.logger.debug('validated dict: ' + str(validated_dict))
+            # if there is no id: create a new blog entry
+            if not id_:
+                validated_dict['owner_id'] = current_user.id
+                entry = Privateblog(**validated_dict)
+                app.logger.debug(str(entry))
+                db.session.add(entry)
+            # if there is an id already: update the blog entry
+            else:
+                blogentry = Privateblog.query.get(id_)
+                if blogentry.owner_id == current_user.id:
+                    blogentry.update(**validated_dict)
+            db.session.commit()
+
+        return db_blogentry()
+    return render_template('freeFan.html')
+
+@app.route('/yourblog', methods=('GET', 'POST'))
+@login_required
+def userfreeFan():
+    if request.method == 'POST':
+        result = request.form.to_dict()
+        app.logger.debug(str(result))
+        id_ = result.get('id', '')
+        validated = True
+        validated_dict = dict()
+        valid_keys = ['name', 'message', 'email', 'avatar_url']
+
+        # validate the input
+        for key in result:
+            app.logger.debug(key, result[key])
+            # screen of unrelated inputs
+            if key not in valid_keys:
+                continue
+
+            value = result[key].strip()
+            if not value or value == 'undefined':
+                validated = False
+                break
+            validated_dict[key] = value
+
+        if validated:
+            app.logger.debug('validated dict: ' + str(validated_dict))
+            # if there is no id: create a new blog entry
+            if not id_:
+                validated_dict['owner_id'] = current_user.id
+                entry = Privateblog(**validated_dict)
+                app.logger.debug(str(entry))
+                db.session.add(entry)
+            # if there is an id already: update the blog entry
+            else:
+                blogentry = Privateblog.query.get(id_)
+                if blogentry.owner_id == current_user.id:
+                    blogentry.update(**validated_dict)
+            db.session.commit()
+
+        return db_user_blogentry()
+    return render_template('yourfreeFan.html')
+
+@app.route("/user_posts/<string:username>")
+@login_required
+def user_posts(username):
+    user = AuthUser.query.filter_by(name=username).first_or_404()
+
+    user_posts = Privateblog.query.filter_by(owner_id=user.id).all()
+
+    return render_template('user_post.html', user=user, posts=user_posts)
+
+@app.route('/remove_blog', methods=('GET', 'POST'))
+def remove_blog():
+    app.logger.debug("REMOVE")
     if request.method == 'POST':
         result = request.form.to_dict()
         id_ = result.get('id', '')
         try:
-            blogpost = PrivateBlogEntry.query.get(id_)
-            db.session.delete(blogpost)
+            entry = Privateblog.query.get(id_)
+            if entry.owner_id == current_user.id:
+                db.session.delete(entry)
             db.session.commit()
         except Exception as ex:
             app.logger.debug(ex)
             raise
-    return lab11_db_blog()
+    return db_blogentry()
+
+
+@app.route('/remove_blog_profile', methods=('GET', 'POST'))
+def remove_blog_profile():
+    app.logger.debug("REMOVE")
+    if request.method == 'POST':
+        result = request.form.to_dict()
+        id_ = result.get('id', '')
+        try:
+            entry = Privateblog.query.get(id_)
+            if entry.owner_id == current_user.id:
+                db.session.delete(entry)
+            db.session.commit()
+        except Exception as ex:
+            app.logger.debug(ex)
+            raise
+    return db_user_blogentry()
+
+@app.route('/profile')
+@login_required
+def freeFan_profile():
+    return render_template('freeFan/profile.html', current_user=current_user)
+
+@app.route('/login', methods=('GET', 'POST'))
+def freeFan_login():
+    if request.method == 'POST':
+        # login code goes here
+        email = request.form.get('email')
+        password = request.form.get('password')
+        remember = bool(request.form.get('remember'))
+
+        user = AuthUser.query.filter_by(email=email).first()
+
+        # check if the user actually exists
+        # take the user-supplied password, hash it, and compare it to the
+        # hashed password in the database
+        if not user or not check_password_hash(user.password, password):
+            flash('Please check your login details and try again.')
+            # if the user doesn't exist or password is wrong, reload the page
+            return redirect(url_for('freeFan_login'))
+
+        # if the above check passes, then we know the user has the right
+        # credentials
+        login_user(user, remember=remember)
+        next_page = request.args.get('next')
+        if not next_page or url_parse(next_page).netloc != '':
+            next_page = url_for('freeFan')
+        return redirect(next_page)
+
+    return render_template('freeFan/login.html')
+
+
+@app.route('/signup', methods=('GET', 'POST'))
+def freeFan_signup():
+
+    def fix_email_domain(email):
+        # function to fix email domain to @opf.com
+        return email.split('@')[0] + '@opf.com'
+
+    if request.method == 'POST':
+        result = request.form.to_dict()
+        app.logger.debug(str(result))
+        validated = True
+        validated_dict = {}
+        valid_keys = ['email', 'name', 'password']
+
+        # validate the input
+        for key in result:
+            app.logger.debug(str(key)+": " + str(result[key]))
+            # screen of unrelated inputs
+            if key not in valid_keys:
+                continue
+
+            value = result[key].strip()
+            if not value or value == 'undefined':
+                validated = False
+                break
+            validated_dict[key] = value
+        
+        # fix email domain to @opf.com
+        validated_dict['email'] = fix_email_domain(validated_dict['email'])
+        
+        # code to validate and add user to database goes here
+        app.logger.debug("validation done")
+        if validated:
+            app.logger.debug('validated dict: ' + str(validated_dict))
+            email = validated_dict['email']
+            name = validated_dict['name']
+            password = validated_dict['password']
+            # if this returns a user, then the email already exists in database
+            user = AuthUser.query.filter_by(email=email).first()
+
+            if user:
+                # if a user is found, we want to redirect back to signup
+                # page so user can try again
+                flash('Email address already exists')
+                return redirect(url_for('freeFan_signup'))
+
+            # create a new user with the form data. Hash the password so
+            # the plaintext version isn't saved.
+            app.logger.debug("preparing to add")
+            avatar_url = gen_avatar_url(email, name)
+            new_user = AuthUser(email=email, name=name,
+                                password=generate_password_hash(
+                                    password, method='sha256'),
+                                avatar_url=avatar_url)
+            # add the new user to the database
+            db.session.add(new_user)
+            db.session.commit()
+
+        return redirect(url_for('freeFan_login'))
+    
+    return render_template('freeFan/signup.html')
+
+
+@app.route('/logout')
+@login_required
+def freeFan_logout():
+    logout_user()
+    return redirect(url_for('freeFan_login'))
+
+@app.route('/submit-form', methods=['POST'])
+@login_required
+def submit_form():
+    current_password = request.form['password']
+    new_name = request.form['name']
+    new_email = request.form['email']
+    new_avatar = gen_avatar_url(new_email, new_name)
+    userEmail = AuthUser.query.filter_by(email=new_email).first()
+    userName = AuthUser.query.filter_by(name=new_name).first()
+    
+    
+        
+    # Check if the current password is correct
+    if check_password_hash(current_user.password, current_password):
+        if userEmail and current_user.email != request.form['email']:
+            flash('This email is already taken.')
+            return redirect(url_for('freeFan_profile'))
+        
+        elif userName and current_user.name != request.form['name']:
+            flash('This username is already taken.')
+            return redirect(url_for('freeFan_profile'))
+        # Update the user's name and email
+        old_name = current_user.name
+        old_email = current_user.email
+        current_user.name = new_name
+        current_user.email = new_email
+        current_user.avatar_url = new_avatar
+        db.session.commit()
+        
+         # Update all records in the database with the old name and email
+        BlogEntry.query.filter_by(name=old_name, email=old_email).update({BlogEntry.name: new_name, BlogEntry.email: new_email, BlogEntry.avatar_url: new_avatar})
+        db.session.commit()
+        flash('Your changes have been saved.', 'success')
+        
+    else:
+        flash('Incorrect password. Please try again.', 'error')
+        
+    return redirect(url_for('freeFan_profile'))
+
+@app.route('/change-password', methods=['POST'])
+def change_password():
+    current_password = request.form.get("curr_password")
+    new_password = request.form.get("new_password")
+    confirm_password = request.form.get("confirm_password")
+    
+    if not check_password_hash(current_user.password, current_password):
+        flash("Incorrect password.")
+        return redirect(url_for("freeFan_profile"))
+
+    if new_password != confirm_password:
+        flash("Password do not match.")
+        return redirect(url_for("freeFan_profile"))
+
+    if new_password == current_password:
+        flash("New password cannot be the same as old password.")
+        return redirect(url_for("freeFan_profile"))
+
+    current_user.name = request.form['name']
+    current_user.email = request.form['email']
+    db.session.commit()
+    
+    current_user.password = generate_password_hash(new_password, method='sha256')
+    
+    db.session.commit()
+
+    flash("Your password has been changed successfully.")
+    return redirect(url_for("freeFan_profile"))
+
+@login_manager.user_loader
+def load_user(user_id):
+    # since the user_id is just the primary key of our
+    # user table, use it in the query for the user
+    return AuthUser.query.get(int(user_id))
 
 def gen_avatar_url(email, name):
     bgcolor = generate_password_hash(email, method='sha256')[-6:]
@@ -200,297 +483,3 @@ def gen_avatar_url(email, name):
         fname + "+" + lname + "&background=" + \
         bgcolor + "&color=" + color
     return avatar_url
-
-@app.route('/lab11', methods=('GET', 'POST'))
-@login_required
-def lab13_profile():
-    return render_template('lab11_microblog.html')
-
-@app.route('/lab11/edit', methods=('GET', 'POST'))
-@login_required
-def lab13_edit():
-    if request.method == 'POST':
-        current_password = request.form['password']
-        app.logger.debug(current_password)
-        new_name = request.form['name']
-        new_email = request.form['email']
-        user = AuthUser.query.filter_by(email=new_email).first()
-        username = AuthUser.query.filter_by(name=new_name).first()
-
-        if not check_password_hash(current_user.password, current_password):
-            flash('Incorrect password.')
-        elif user and current_user.email != request.form['email']:
-            flash('Email is already taken.')
-        elif username and current_user.name != request.form['name']:
-            flash('Username is already taken.')
-        else:
-            old_name = current_user.name
-            old_email = current_user.email
-            current_user.name = new_name
-            current_user.email = new_email
-            db.session.commit()
-
-            AuthUser.query.filter_by(name=old_name, email=old_email).update({AuthUser.name: new_name, AuthUser.email: new_email})
-            db.session.commit()
-            flash('Your changes have been saved.')
-            return redirect(url_for("lab13_profile"))
-    return render_template('lab13/edit.html')
-
-@app.route('/lab11/validatepassword', methods=('GET', 'POST'))
-@login_required
-def lab13_validatepass():
-    if request.method == 'POST':
-        current_password = request.form['password0']
-        app.logger.debug(current_password)
-
-        if not check_password_hash(current_user.password, current_password):
-            flash('Incorrect password.')
-        else:
-            flash('Correct.')
-            return redirect(url_for("lab13_editpass"))
-    return render_template('lab13/confirmpass.html')
-
-@app.route('/lab11/editpass', methods=('GET', 'POST'))
-@login_required
-def lab13_editpass():
-    if request.method == 'POST':
-        new_password = request.form['password1']
-        new_password2 = request.form['password2']
-        app.logger.debug(new_password)
-        app.logger.debug(new_password2)
-
-        if new_password != new_password2:
-            flash('One of your password is not the same.')
-        else:
-            old_pass = current_user.password
-            AuthUser.query.filter_by(password=old_pass).update({AuthUser.password: generate_password_hash(
-                                    new_password, method='sha256')})
-            db.session.commit()
-            flash('Your changes have been saved.')
-            return redirect(url_for("lab13_profile"))
-    return render_template('lab13/changepass.html')
-
-
-
-@app.route('/lab11/login', methods=('GET', 'POST'))
-def lab13_login():
-    if request.method == 'POST':
-        # login code goes here
-        email = request.form.get('email')
-        password = request.form.get('password')
-        app.logger.debug(password)
-        remember = bool(request.form.get('remember'))
-
-
-        user = AuthUser.query.filter_by(email=email).first()
- 
-        # check if the user actually exists
-        # take the user-supplied password, hash it, and compare it to the
-        # hashed password in the database
-        if not user or not check_password_hash(user.password, password):
-            flash('Please check your login details and try again.')
-            # if the user doesn't exist or password is wrong, reload the page
-            return redirect(url_for('lab13_login'))
-
-
-        # if the above check passes, then we know the user has the right
-        # credentials
-        login_user(user, remember=remember)
-        next_page = request.args.get('next')
-        if not next_page or url_parse(next_page).netloc != '':
-            next_page = url_for('lab11_microblog')
-        return redirect(next_page)
-
-
-    return render_template('lab13/login.html')
-
-
-
-
-@app.route('/lab11/signup', methods=('GET', 'POST'))
-def lab13_signup():
-
-
-    if request.method == 'POST':
-        result = request.form.to_dict()
-        app.logger.debug(str(result))
- 
-        validated = True
-        validated_dict = {}
-        valid_keys = ['email', 'name', 'password']
-
-
-        # validate the input
-        for key in result:
-            app.logger.debug(str(key)+": " + str(result[key]))
-            # screen of unrelated inputs
-            if key not in valid_keys:
-                continue
-
-
-            value = result[key].strip()
-            if not value or value == 'undefined':
-                validated = False
-                break
-            validated_dict[key] = value
-            # code to validate and add user to database goes here
-        app.logger.debug("validation done")
-        if validated:
-            app.logger.debug('validated dict: ' + str(validated_dict))
-            email = validated_dict['email']
-            name = validated_dict['name']
-            password = validated_dict['password']
-            # if this returns a user, then the email already exists in database
-            user = AuthUser.query.filter_by(email=email).first()
-
-
-            if user:
-                # if a user is found, we want to redirect back to signup
-                # page so user can try again
-                flash('Email address already exists')
-                return redirect(url_for('lab13_signup'))
-
-
-            # create a new user with the form data. Hash the password so
-            # the plaintext version isn't saved.
-            app.logger.debug("preparing to add")
-            avatar_url = gen_avatar_url(email, name)
-            new_user = AuthUser(email=email, name=name,
-                                password=generate_password_hash(
-                                    password, method='sha256'),
-                                avatar_url=avatar_url)
-            # add the new user to the database
-            db.session.add(new_user)
-            db.session.commit()
-
-
-        return redirect(url_for('lab13_login'))
-    return render_template('lab13/signup.html')
-
-
-@ app.route('/lab11/logout')
-@login_required
-def lab13_logout():
-    logout_user()
-    return redirect(url_for('lab13_login'))
-
-
-
-
-#---------------------------------------------------------------------------------------------------------------------------
-
-
-@app.route('/lab12/logout')
-@login_required
-def lab12_logout():
-    logout_user()
-    return redirect(url_for('lab12_index'))
-
-
-@app.route('/lab12')
-def lab12_index():
-   return render_template('lab12/index.html')
-
-
-
-
-@app.route('/lab12/profile')
-def lab12_profile():
-   return render_template('lab12/profile.html')
-
-
-
-
-@app.route('/lab12/login', methods=('GET', 'POST'))
-def lab12_login():
-    if request.method == 'POST':
-        # login code goes here
-        email = request.form.get('email')
-        password = request.form.get('password')
-        remember = bool(request.form.get('remember'))
-
-
-        user = AuthUser.query.filter_by(email=email).first()
- 
-        # check if the user actually exists
-        # take the user-supplied password, hash it, and compare it to the
-        # hashed password in the database
-        if not user or not check_password_hash(user.password, password):
-            flash('Please check your login details and try again.')
-            # if the user doesn't exist or password is wrong, reload the page
-            return redirect(url_for('lab12_login'))
-
-
-        # if the above check passes, then we know the user has the right
-        # credentials
-        login_user(user, remember=remember)
-        next_page = request.args.get('next')
-        if not next_page or url_parse(next_page).netloc != '':
-            next_page = url_for('lab12_profile')
-        return redirect(next_page)
-
-
-    return render_template('lab12/login.html')
-
-
-
-
-@app.route('/lab12/signup', methods=('GET', 'POST'))
-def lab12_signup():
-
-
-    if request.method == 'POST':
-        result = request.form.to_dict()
-        app.logger.debug(str(result))
- 
-        validated = True
-        validated_dict = {}
-        valid_keys = ['email', 'name', 'password']
-
-
-        # validate the input
-        for key in result:
-            app.logger.debug(str(key)+": " + str(result[key]))
-            # screen of unrelated inputs
-            if key not in valid_keys:
-                continue
-
-
-            value = result[key].strip()
-            if not value or value == 'undefined':
-                validated = False
-                break
-            validated_dict[key] = value
-            # code to validate and add user to database goes here
-        app.logger.debug("validation done")
-        if validated:
-            app.logger.debug('validated dict: ' + str(validated_dict))
-            email = validated_dict['email']
-            name = validated_dict['name']
-            password = validated_dict['password']
-            # if this returns a user, then the email already exists in database
-            user = AuthUser.query.filter_by(email=email).first()
-
-
-            if user:
-                # if a user is found, we want to redirect back to signup
-                # page so user can try again
-                flash('Email address already exists')
-                return redirect(url_for('lab12_signup'))
-
-
-            # create a new user with the form data. Hash the password so
-            # the plaintext version isn't saved.
-            app.logger.debug("preparing to add")
-            avatar_url = gen_avatar_url(email, name)
-            new_user = AuthUser(email=email, name=name,
-                                password=generate_password_hash(
-                                    password, method='sha256'),
-                                avatar_url=avatar_url)
-            # add the new user to the database
-            db.session.add(new_user)
-            db.session.commit()
-
-
-        return redirect(url_for('lab12_login'))
-    return render_template('lab12/signup.html')

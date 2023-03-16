@@ -26,14 +26,14 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install -r requirements.txt
 
+RUN pip install pytz django
+
 
 # copy project
 COPY . /app
-
-# keep Docker process running
-CMD ["tail", "-f", "/dev/null"]
 
 
 # specify the entry point
 RUN chmod 755 /app/gunicorn_starter.sh
 ENTRYPOINT [ "./gunicorn_starter.sh" ]
+#CMD tail -f /dev/null
